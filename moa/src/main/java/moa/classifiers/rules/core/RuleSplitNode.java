@@ -42,7 +42,7 @@ public class RuleSplitNode extends SplitNode {
      * Create a new RuleSplitNode
      */
     public RuleSplitNode(InstanceConditionalTest splitTest, double[] classObservations) {
-        super(splitTest, classObservations);
+        super(splitTest, classObservations, 0.0);
     }
 
     public boolean evaluate(Instance instance) {

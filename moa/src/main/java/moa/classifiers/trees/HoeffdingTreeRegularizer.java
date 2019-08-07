@@ -1,29 +1,11 @@
-/*
- *    HoeffdingTree.java
- *    Copyright (C) 2007 University of Waikato, Hamilton, New Zealand
- *    @author Richard Kirkby (rkirkby@cs.waikato.ac.nz)
- *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License as published by
- *    the Free Software Foundation; either version 3 of the License, or
- *    (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
- *
- *    You should have received a copy of the GNU General Public License
- *    along with this program. If not, see <http://www.gnu.org/licenses/>.
- *    
- */
 package moa.classifiers.trees;
 
-import com.github.javacliparser.FileOption;
-
-import java.io.IOException;
-import java.util.*;
-
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Set;
 import com.github.javacliparser.FlagOption;
 import com.github.javacliparser.FloatOption;
 import com.github.javacliparser.IntOption;
@@ -39,85 +21,26 @@ import moa.classifiers.core.attributeclassobservers.NullAttributeClassObserver;
 import moa.classifiers.core.attributeclassobservers.NumericAttributeClassObserver;
 import moa.classifiers.core.conditionaltests.InstanceConditionalTest;
 import moa.classifiers.core.splitcriteria.SplitCriterion;
-import moa.core.*;
+import moa.core.AutoExpandVector;
+import moa.core.DoubleVector;
+import moa.core.Measurement;
+import moa.core.SizeOf;
+import moa.core.StringUtils;
+import moa.core.Utils;
 import moa.options.ClassOption;
 import com.yahoo.labs.samoa.instances.Instance;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.PrintStream;
-
-import moa.streams.filters.FeatureScore;
-
-/**
- * Hoeffding Tree or VFDT.
- * <p>
- * A Hoeffding tree is an incremental, anytime decision tree induction algorithm
- * that is capable of learning from massive data streams, assuming that the
- * distribution generating examples does not change over time. Hoeffding trees
- * exploit the fact that a small sample can often be enough to choose an optimal
- * splitting attribute. This idea is supported mathematically by the Hoeffding
- * bound, which quantiﬁes the number of observations (in our case, examples)
- * needed to estimate some statistics within a prescribed precision (in our
- * case, the goodness of an attribute).</p> <p>A theoretically appealing feature
- * of Hoeffding Trees not shared by other incremental decision tree learners is
- * that it has sound guarantees of performance. Using the Hoeffding bound one
- * can show that its output is asymptotically nearly identical to that of a
- * non-incremental learner using inﬁnitely many examples. See for details:</p>
- * <p>
- * <p>G. Hulten, L. Spencer, and P. Domingos. Mining time-changing data streams.
- * In KDD’01, pages 97–106, San Francisco, CA, 2001. ACM Press.</p>
- * <p>
- * <p>Parameters:</p> <ul> <li> -m : Maximum memory consumed by the tree</li>
- * <li> -n : Numeric estimator to use : <ul> <li>Gaussian approximation
- * evaluating 10 splitpoints</li> <li>Gaussian approximation evaluating 100
- * splitpoints</li> <li>Greenwald-Khanna quantile summary with 10 tuples</li>
- * <li>Greenwald-Khanna quantile summary with 100 tuples</li>
- * <li>Greenwald-Khanna quantile summary with 1000 tuples</li> <li>VFML method
- * with 10 bins</li> <li>VFML method with 100 bins</li> <li>VFML method with
- * 1000 bins</li> <li>Exhaustive binary tree</li> </ul> </li> <li> -e : How many
- * instances between memory consumption checks</li> <li> -g : The number of
- * instances a leaf should observe between split attempts</li> <li> -s : Split
- * criterion to use. Example : InfoGainSplitCriterion</li> <li> -c : The
- * allowable error in split decision, values closer to 0 will take longer to
- * decide</li> <li> -t : Threshold below which a split will be forced to break
- * ties</li> <li> -b : Only allow binary splits</li> <li> -z : Stop growing as
- * soon as memory limit is hit</li> <li> -r : Disable poor attributes</li> <li>
- * -p : Disable pre-pruning</li>
- * <li> -l : Leaf prediction to use: MajorityClass (MC), Naive Bayes (NB) or NaiveBayes
- * adaptive (NBAdaptive).</li>
- * <li> -q : The number of instances a leaf should observe before
- * permitting Naive Bayes</li>
- * </ul>
- *
- * @author Richard Kirkby (rkirkby@cs.waikato.ac.nz)
- * @version $Revision: 7 $
- */
-public class HoeffdingTree extends AbstractClassifier
-        implements MultiClassClassifier, FeatureScore {
-
-    private static final long serialVersionUID = 1L;
+public class HoeffdingTreeRegularizer extends AbstractClassifier implements MultiClassClassifier {
 
     @Override
     public String getPurposeString() {
-        return "Hoeffding Tree or VFDT.";
+        return "Hoeffding Tree or VFDT with regularization for feature selection.";
     }
 
     public IntOption maxByteSizeOption = new IntOption("maxByteSize", 'm',
             "Maximum memory consumed by the tree.", 33554432, 0,
             Integer.MAX_VALUE);
 
-    /*
-     * public MultiChoiceOption numericEstimatorOption = new MultiChoiceOption(
-     * "numericEstimator", 'n', "Numeric estimator to use.", new String[]{
-     * "GAUSS10", "GAUSS100", "GK10", "GK100", "GK1000", "VFML10", "VFML100",
-     * "VFML1000", "BINTREE"}, new String[]{ "Gaussian approximation evaluating
-     * 10 splitpoints", "Gaussian approximation evaluating 100 splitpoints",
-     * "Greenwald-Khanna quantile summary with 10 tuples", "Greenwald-Khanna
-     * quantile summary with 100 tuples", "Greenwald-Khanna quantile summary
-     * with 1000 tuples", "VFML method with 10 bins", "VFML method with 100
-     * bins", "VFML method with 1000 bins", "Exhaustive binary tree"}, 0);
-     */
     public ClassOption numericEstimatorOption = new ClassOption("numericEstimator",
             'n', "Numeric estimator to use.", NumericAttributeClassObserver.class,
             "GaussianNumericAttributeClassObserver");
@@ -164,20 +87,12 @@ public class HoeffdingTree extends AbstractClassifier
     public FlagOption noPrePruneOption = new FlagOption("noPrePrune", 'p',
             "Disable pre-pruning.");
 
-    public FlagOption useMinMeritForSplitOption = new FlagOption("useMinMeritForSplit", 'w', "");
-    public FloatOption minMeritForSplitOption = new FloatOption("minMeritForSplit", 'M',
-            "Threshold for minimum merit.", 1e-10, 0.0, 1.0);
+    public FloatOption lambdaOption = new FloatOption("lambda", 'L',
+            "Lambda parameter for regularization.", 0.5, 0.0, 1.0);
 
-    public FlagOption outputTreeOption = new FlagOption("outputTree", 'T', "Determine whether trees should be outputted.");
-
-    public IntOption debugOutputTrainingWeightSeenOption = new IntOption("debugOutputTrainingWeightSeen", 'j',
-            "The training weight seen before outputing a new tree to a new file.", 10000, 1, Integer.MAX_VALUE);
-
-    public FileOption debugDotFilePrefixOption = new FileOption("debugDotFilePrefix", 'v',
-            "File prefix to create the output dot tree files.", "tree", "dot", true);
-
-    public FlagOption doNotUseParentStatisticsOption = new FlagOption("doNotUseParentStatistics",
-            'x', "Do not take into account the statistics from the parent of a node during split.");
+    public MultiChoiceOption regularizationOption = new MultiChoiceOption("regularization", '*',
+            "Strategy for checking minimum merit for splits.", new String[]{"AVG", "MAX"},
+            new String[]{"AVG", "MAX"}, 0);
 
     public static class FoundNode {
 
@@ -194,171 +109,14 @@ public class HoeffdingTree extends AbstractClassifier
         }
     }
 
-
-    // For feature score/importance calculation.
-    protected double[] featureScores;
-    protected int currentNodeCount = 0;
-    protected boolean shouldTrainFeatureScore = true;
-
-    // For a evaluation metric
-    double totalInstancesSeen = 0.0;
-    double weightedHits = 0.0;
-
-    /***
-     * Update the tree model using an instance and updates featureImportance. 
-     * Update the featureImportance array only if a splits happens
-     *  There will be no changes in the scores only by updating the leaves. 
-     *  This calculation is based on the Mean Decrease Impurity (MDI), more
-     *  details about how it is calculated can be found in here: 
-     *      Louppe, G., Wehenkel, L., Sutera, A., & Geurts, P. (2013). 
-     *      Understanding variable importances in forests of randomized trees. 
-     *      In Advances in neural information processing systems (pp. 431-439).
-     * @param instance
-     */
-    @Override
-    public boolean updateFeaturesScore(Instance instance) {
-        // Instantiate the featureImportance array. 
-        //  instance.numAttributes() - 1 is used to not allocate an array space to the class variable.
-        if (this.featureScores == null)
-            this.featureScores = new double[instance.numAttributes() - 1];
-
-        // Update the tree model
-        //  When used from within a random forest, then it will not be updated through here.
-        if (this.shouldTrainFeatureScore)
-            this.trainOnInstance(instance);
-
-        return this.getNodeCount() > this.currentNodeCount;
-    }
-
-    public int getNodeCount() {
-        return this.decisionNodeCount + this.activeLeafNodeCount + this.inactiveLeafNodeCount;
-    }
-
-    public void setShouldTrainFeatureScore(boolean value) {
-        this.shouldTrainFeatureScore = value;
-    }
-
-    public boolean getShouldTrainFeatureScore() {
-        return this.shouldTrainFeatureScore;
-    }
-
-    private void calcMeanDecreaseImpurity(Node node) {
-        if (node instanceof SplitNode) {
-            SplitNode splitNode = (SplitNode) node;
-            int attributeIndex = splitNode.getSplitTest().getAttsTestDependsOn()[0];
-
-            if (this.featureScores.length <= attributeIndex) {
-                System.out.println("Going to explode!!!");
-            }
-
-            this.featureScores[attributeIndex] += calcNodeDecreaseImpurity(splitNode);
-
-            for (Node childNode : splitNode.children) {
-                if (childNode != null)
-                    calcMeanDecreaseImpurity(childNode);
-            }
-        }
-    }
-
-    public double calcNodeDecreaseImpurity(SplitNode splitNode) {
-        double nodeImpurity = splitNode.getImpurity();
-        //(int) Utils.sum(splitNode.getObservedClassDistribution());
-        double sumChildrenImpurityDecrease = 0;
-
-        // Sum the children class label distribution, whatever instance
-        //  that arrive at a child node, will have passed by the current node. 
-        int childrenNumInstances = 0;
-        for (Node childNode : splitNode.children) {
-            if (childNode != null) {
-                double childImpurity = childNode.getImpurity();
-                int childNumInstances = (int) Utils.sum(childNode.getObservedClassDistribution());
-                childrenNumInstances += childNumInstances;
-
-                sumChildrenImpurityDecrease += childImpurity * childNumInstances;
-            }
-        }
-
-        return nodeImpurity * childrenNumInstances - sumChildrenImpurityDecrease;
-    }
-
-    @Override
-    public double[] getFeaturesScore(boolean normalized) {
-        if (this.treeRoot != null) {
-            // Check if there were changes to the tree topology (new nodes)
-            //  If not, it is not necessary to recalculated featureScores, 
-            //  just return the current values. 
-            if (this.getNodeCount() > this.currentNodeCount) {
-                this.featureScores = new double[this.featureScores.length];
-                currentNodeCount = this.getNodeCount();
-
-                // If there was a split, then recalculate scores. 
-                // TODO: This can be more efficiently, if intermediary computations
-                //  are kept in memory. For example, store each node absolute contribution
-                //  to MDI and then just add the new one when a split occurs. 
-                this.calcMeanDecreaseImpurity(this.treeRoot);
-
-                // normalize the featureScores
-                if (normalized) {
-                    double sumFeatureScores = Utils.sum(this.featureScores);
-                    for (int i = 0; i < this.featureScores.length; ++i) {
-                        this.featureScores[i] /= sumFeatureScores;
-                    }
-                }
-            }
-        }
-
-        return this.featureScores;
-    }
-
-    @Override
-    public int[] getTopKFeatures(int k, boolean normalize) {
-        // It is important to use the method to access featureScores, if
-        //  in the future they are calculate as they are accessed, this 
-        //  method won't require changes.
-
-        if (this.getFeaturesScore(normalize) == null)
-            return null;
-        if (k > this.getFeaturesScore(normalize).length)
-            k = this.getFeaturesScore(normalize).length;
-
-        int[] topK = new int[k];
-        double[] currentFeatureScores = new double[this.getFeaturesScore(normalize).length];
-        for (int i = 0; i < currentFeatureScores.length; ++i)
-            currentFeatureScores[i] = this.getFeaturesScore(normalize)[i];
-
-        for (int i = 0; i < k; ++i) {
-            int currentTop = Utils.maxIndex(currentFeatureScores);
-            topK[i] = currentTop;
-            currentFeatureScores[currentTop] = -1;
-        }
-
-        return topK;
-    }
-
     public static class Node extends AbstractMOAObject {
 
         private static final long serialVersionUID = 1L;
 
         protected DoubleVector observedClassDistribution;
 
-        protected AutoExpandVector<AttributeClassObserver> attributeObservers = new AutoExpandVector<AttributeClassObserver>();
-
-        protected static int NODE_GEN;
-        protected final int nodeID;
-
-        protected double impurity = 0.0;
-
-        public double getImpurity() {
-            return impurity;
-        }
-
-        public Node() {
-            nodeID = 0;
-        }
-
         public Node(double[] classObservations) {
             this.observedClassDistribution = new DoubleVector(classObservations);
-            this.nodeID = Node.NODE_GEN++;
         }
 
         public int calcByteSize() {
@@ -374,7 +132,7 @@ public class HoeffdingTree extends AbstractClassifier
         }
 
         public FoundNode filterInstanceToLeaf(Instance inst, SplitNode parent,
-                                              int parentBranch, TreeSet<Integer> usedFeatures) {
+                                              int parentBranch) {
             return new FoundNode(this, parent, parentBranch);
         }
 
@@ -382,7 +140,7 @@ public class HoeffdingTree extends AbstractClassifier
             return this.observedClassDistribution.getArrayCopy();
         }
 
-        public double[] getClassVotes(Instance inst, HoeffdingTree ht) {
+        public double[] getClassVotes(Instance inst, HoeffdingTreeRegularizer ht) {
             return this.observedClassDistribution.getArrayCopy();
         }
 
@@ -390,7 +148,7 @@ public class HoeffdingTree extends AbstractClassifier
             return this.observedClassDistribution.numNonZeroEntries() < 2;
         }
 
-        public void describeSubtree(HoeffdingTree ht, StringBuilder out,
+        public void describeSubtree(HoeffdingTreeRegularizer ht, StringBuilder out,
                                     int indent) {
             StringUtils.appendIndented(out, indent, "Leaf ");
             out.append(ht.getClassNameString());
@@ -412,12 +170,6 @@ public class HoeffdingTree extends AbstractClassifier
                     : 0.0;
         }
 
-        public void getNodeDot(HoeffdingTree ht, StringBuilder output, Instance instance) {
-            output.append(this.nodeID);
-            output.append(" [label=\"Node");
-            output.append("\"]\n");
-        }
-
         @Override
         public void getDescription(StringBuilder sb, int indent) {
             describeSubtree(null, sb, indent);
@@ -431,6 +183,10 @@ public class HoeffdingTree extends AbstractClassifier
         protected InstanceConditionalTest splitTest;
 
         protected AutoExpandVector<Node> children; // = new AutoExpandVector<Node>();
+
+        protected int indicesFeaturesSelected[];
+
+        protected double meritsFeaturesSelected[];
 
         @Override
         public int calcByteSize() {
@@ -449,28 +205,24 @@ public class HoeffdingTree extends AbstractClassifier
             return byteSize;
         }
 
-        public InstanceConditionalTest getSplitTest() {
-            return splitTest;
-        }
-
-        public SplitNode(double[] classObservations) {
-            super(classObservations);
-        }
-
-        public SplitNode(InstanceConditionalTest splitTest,
-                         double[] classObservations, double impurity, int size) {
+        public SplitNode(InstanceConditionalTest splitTest, int indicesFeaturesSelected[],
+                         double meritsFeaturesSelected[],
+                         double[] classObservations, int size) {
             super(classObservations);
             this.splitTest = splitTest;
+            this.indicesFeaturesSelected = indicesFeaturesSelected;
+            this.meritsFeaturesSelected = meritsFeaturesSelected;
             this.children = new AutoExpandVector<Node>(size);
-            this.impurity = impurity;
         }
 
-        public SplitNode(InstanceConditionalTest splitTest,
-                         double[] classObservations, double impurity) {
+        public SplitNode(InstanceConditionalTest splitTest, int indicesFeaturesSelected[],
+                         double meritsFeaturesSelected[],
+                         double[] classObservations) {
             super(classObservations);
             this.splitTest = splitTest;
+            this.indicesFeaturesSelected = indicesFeaturesSelected;
+            this.meritsFeaturesSelected = meritsFeaturesSelected;
             this.children = new AutoExpandVector<Node>();
-            this.impurity = impurity;
         }
 
 
@@ -501,13 +253,12 @@ public class HoeffdingTree extends AbstractClassifier
 
         @Override
         public FoundNode filterInstanceToLeaf(Instance inst, SplitNode parent,
-                                              int parentBranch, TreeSet<Integer> usedFeatures) {
-            if(usedFeatures != null) usedFeatures.add(this.splitTest.getAttsTestDependsOn()[0]);
+                                              int parentBranch) {
             int childIndex = instanceChildIndex(inst);
             if (childIndex >= 0) {
                 Node child = getChild(childIndex);
                 if (child != null) {
-                    return child.filterInstanceToLeaf(inst, this, childIndex, usedFeatures);
+                    return child.filterInstanceToLeaf(inst, this, childIndex);
                 }
                 return new FoundNode(null, this, childIndex);
             }
@@ -515,7 +266,7 @@ public class HoeffdingTree extends AbstractClassifier
         }
 
         @Override
-        public void describeSubtree(HoeffdingTree ht, StringBuilder out,
+        public void describeSubtree(HoeffdingTreeRegularizer ht, StringBuilder out,
                                     int indent) {
             for (int branch = 0; branch < numChildren(); branch++) {
                 Node child = getChild(branch);
@@ -543,102 +294,17 @@ public class HoeffdingTree extends AbstractClassifier
             }
             return maxChildDepth + 1;
         }
-
-        @Override
-        public void getNodeDot(HoeffdingTree ht, StringBuilder output, Instance instance) {
-            output.append(this.nodeID);
-            output.append(" [label=\"attribute = ");
-            output.append(instance.attribute(this.splitTest.getAttsTestDependsOn()[0]).name());
-            output.append("(index = ");
-            output.append(this.splitTest.getAttsTestDependsOn()[0]);
-            output.append(")");
-
-
-            StringBuilder childrenOutput = new StringBuilder();
-            int childrenNumInstances = 0;
-
-            for (int branch = 0; branch < numChildren(); branch++) {
-                Node child = getChild(branch);
-
-                if (child != null) {
-//                    output.append(this.splitTest.describeConditionForBranch(branch,
-//                            ht.getModelContext()));
-                    int childNumInstances = (int) Utils.sum(child.getObservedClassDistribution());
-                    childrenNumInstances += childNumInstances;
-//                    child.describeSubtree(ht, out, indent + 2);
-//                    output.append();
-                    child.getNodeDot(ht, childrenOutput, instance);
-                    childrenOutput.append(this.nodeID);
-                    childrenOutput.append(" -> ");
-                    childrenOutput.append(child.nodeID);
-                    childrenOutput.append(" [label = \"");
-                    childrenOutput.append(this.splitTest.describeBranchValue(branch, ht.getModelContext()));
-                    childrenOutput.append("\"]");
-                    childrenOutput.append(";\n");
-                }
-            }
-
-            output.append("\\nimpurity_value = ");
-            output.append(this.getImpurity());
-            output.append("\\nsamples_child_sum = ");
-            output.append(childrenNumInstances);
-            output.append("\\nsamples_at_split = ");
-            output.append((int) Utils.sum(this.getObservedClassDistribution()));
-            output.append("\\nclass_distribution = {");
-            for (int i = 0; i < this.observedClassDistribution.numValues(); ++i) {
-                output.append(instance.classAttribute().value(i));
-                output.append(" = ");
-                output.append((int) this.observedClassDistribution.getValue(i));
-                if (i != this.observedClassDistribution.numValues() - 1)
-                    output.append(", ");
-            }
-            output.append('}');
-
-            output.append("\\nMDI = ");
-            output.append(ht.calcNodeDecreaseImpurity(this));
-
-            output.append("\"];\n");
-            output.append(childrenOutput);
-//            return output.toString();
-        }
     }
 
     public static abstract class LearningNode extends Node {
 
         private static final long serialVersionUID = 1L;
 
-        public LearningNode() {
-        }
-
         public LearningNode(double[] initialClassObservations) {
             super(initialClassObservations);
         }
 
-        public abstract void learnFromInstance(Instance inst, HoeffdingTree ht);
-
-        @Override
-        public void getNodeDot(HoeffdingTree ht, StringBuilder output, Instance instance) {
-            output.append("\t");
-            output.append(this.nodeID);
-            output.append(" [label=\"");
-//            output.append("leaf_type = ");
-//            String className = this.getClass().getName();
-//            output.append(className.substring(className.indexOf("$")+1));
-            output.append("\\nimpurity_value = ");
-            output.append(this.getImpurity());
-            output.append("\\nsamples = ");
-            output.append((int) Utils.sum(this.getObservedClassDistribution()));
-            output.append("\\nclass_distribution = {");
-            for (int i = 0; i < this.observedClassDistribution.numValues(); ++i) {
-                output.append(instance.classAttribute().value(i));
-                output.append(" = ");
-                output.append((int) this.observedClassDistribution.getValue(i));
-                if (i != this.observedClassDistribution.numValues() - 1)
-                    output.append(", ");
-            }
-            output.append('}');
-            output.append("\"];\n");
-        }
+        public abstract void learnFromInstance(Instance inst, HoeffdingTreeRegularizer ht);
     }
 
     public static class InactiveLearningNode extends LearningNode {
@@ -650,7 +316,7 @@ public class HoeffdingTree extends AbstractClassifier
         }
 
         @Override
-        public void learnFromInstance(Instance inst, HoeffdingTree ht) {
+        public void learnFromInstance(Instance inst, HoeffdingTreeRegularizer ht) {
             this.observedClassDistribution.addToValue((int) inst.classValue(),
                     inst.weight());
         }
@@ -662,15 +328,17 @@ public class HoeffdingTree extends AbstractClassifier
 
         protected double weightSeenAtLastSplitEvaluation;
 
+        protected AutoExpandVector<AttributeClassObserver> attributeObservers = new AutoExpandVector<AttributeClassObserver>();
+
         protected boolean isInitialized;
 
-        public ActiveLearningNode() {
-        }
+        protected double lambda;
 
-        public ActiveLearningNode(double[] initialClassObservations) {
+        public ActiveLearningNode(double[] initialClassObservations, double lambda) {
             super(initialClassObservations);
             this.weightSeenAtLastSplitEvaluation = getWeightSeen();
             this.isInitialized = false;
+            this.lambda = lambda;
         }
 
         @Override
@@ -680,7 +348,7 @@ public class HoeffdingTree extends AbstractClassifier
         }
 
         @Override
-        public void learnFromInstance(Instance inst, HoeffdingTree ht) {
+        public void learnFromInstance(Instance inst, HoeffdingTreeRegularizer ht) {
             if (this.isInitialized == false) {
                 this.attributeObservers = new AutoExpandVector<AttributeClassObserver>(inst.numAttributes());
                 this.isInitialized = true;
@@ -710,8 +378,9 @@ public class HoeffdingTree extends AbstractClassifier
             this.weightSeenAtLastSplitEvaluation = weight;
         }
 
-        public AttributeSplitSuggestion[] getBestSplitSuggestions(
-                SplitCriterion criterion, HoeffdingTree ht) {
+        public AttributeSplitSuggestion[] getBestSplitSuggestions(SplitCriterion criterion,
+                HoeffdingTreeRegularizer ht,
+                int selectedFeatures[]) {
             List<AttributeSplitSuggestion> bestSuggestions = new LinkedList<AttributeSplitSuggestion>();
             double[] preSplitDist = this.observedClassDistribution.getArrayCopy();
             if (!ht.noPrePruneOption.isSet()) {
@@ -724,9 +393,15 @@ public class HoeffdingTree extends AbstractClassifier
             for (int i = 0; i < this.attributeObservers.size(); i++) {
                 AttributeClassObserver obs = this.attributeObservers.get(i);
                 if (obs != null) {
-//                    System.out.println("[" + i +"] \t pre = " + Arrays.toString(preSplitDist));
                     AttributeSplitSuggestion bestSuggestion = obs.getBestEvaluatedSplitSuggestion(criterion,
                             preSplitDist, i, ht.binarySplitsOption.isSet());
+                    int selected = bestSuggestion.splitTest.getAttsTestDependsOn()[0];
+                    if(!contains(selectedFeatures, selected)){
+                        bestSuggestion.merit *= lambda;
+                    }/*else{
+                        double gamma = 1.0 - (count(selected, selectedFeatures) / selectedFeatures.length);
+                        bestSuggestion.merit *= gamma;
+                    }*/
                     if (bestSuggestion != null) {
                         bestSuggestions.add(bestSuggestion);
                     }
@@ -735,13 +410,27 @@ public class HoeffdingTree extends AbstractClassifier
             return bestSuggestions.toArray(new AttributeSplitSuggestion[bestSuggestions.size()]);
         }
 
+        private double count(int selected, int[] selectedFeatures) {
+            double qty = 0.0;
+            for(int i = 0; i < selectedFeatures.length; i++) if(selected == selectedFeatures[i]) qty++;
+            return qty;
+        }
+
         public void disableAttribute(int attIndex) {
             this.attributeObservers.set(attIndex,
                     new NullAttributeClassObserver());
         }
+
+        private boolean contains(int a[], int v){
+            for(int i = 0; i < a.length; i++){
+                if(a[i] == v) return true;
+            }
+            return false;
+        }
+
     }
 
-    public Node treeRoot;
+    protected Node treeRoot;
 
     protected int decisionNodeCount;
 
@@ -780,50 +469,24 @@ public class HoeffdingTree extends AbstractClassifier
         this.activeLeafByteSizeEstimate = 0.0;
         this.byteSizeEstimateOverheadFraction = 1.0;
         this.growthAllowed = true;
-        if (this.leafpredictionOption.getChosenIndex() > 0) {
+        if (this.leafpredictionOption.getChosenIndex()>0) {
             this.removePoorAttsOption = null;
         }
     }
 
     @Override
     public void trainOnInstanceImpl(Instance inst) {
-        // if(this.trainingWeightSeenByModel % 500 == 0) System.out.println(inst);
         if (this.treeRoot == null) {
             this.treeRoot = newLearningNode();
             this.activeLeafNodeCount = 1;
         }
-
-//        int gtRel[] = inst.dataset().getIndicesRelevants();
-//        int gtIrrel[] = inst.dataset().getIndicesIrrelevants();
-
-//        TreeSet<Integer> usedFeatures = new TreeSet<>();
-        FoundNode foundNode = this.treeRoot.filterInstanceToLeaf(inst, null, -1, null);
+        FoundNode foundNode = this.treeRoot.filterInstanceToLeaf(inst, null, -1);
         Node leafNode = foundNode.node;
-
-//        int used[] = new int[usedFeatures.size()];
-//        int ix = 0;
-//        for(int v : usedFeatures){
-//            used[ix] = v;
-//            ix++;
-//        }
-//        Integer used[] = (Integer[]) usedFeatures.toArray();
-//        double nrfc = FeatureSelectionUtils.intersection(used, gtRel);
-//        double nifc = FeatureSelectionUtils.intersection(used, gtIrrel);
-//        double nrf = gtRel.length;
-//        double nif = gtIrrel.length;
-//
-//        double w = (nrfc / nrf) - (nifc / nif);
-
         if (leafNode == null) {
             leafNode = newLearningNode();
             foundNode.parent.setChild(foundNode.parentBranch, leafNode);
             this.activeLeafNodeCount++;
         }
-//        if(Utils.maxIndex(leafNode.getClassVotes(inst, this)) == inst.classValue()){
-//            weightedHits += w;
-//        }
-        totalInstancesSeen++;
-
         if (leafNode instanceof LearningNode) {
             LearningNode learningNode = (LearningNode) leafNode;
             learningNode.learnFromInstance(inst, this);
@@ -843,20 +506,13 @@ public class HoeffdingTree extends AbstractClassifier
                 % this.memoryEstimatePeriodOption.getValue() == 0) {
             estimateModelByteSizes();
         }
-        try {
-            if (outputTreeOption.isSet())
-                if (this.trainingWeightSeenByModel % this.debugOutputTrainingWeightSeenOption.getValue() == 0)
-                    outputTreeDotFile(this, inst);
-        }catch (Exception e){
-
-        }
     }
 
     @Override
     public double[] getVotesForInstance(Instance inst) {
         if (this.treeRoot != null) {
             FoundNode foundNode = this.treeRoot.filterInstanceToLeaf(inst,
-                    null, -1, null);
+                    null, -1);
             Node leafNode = foundNode.node;
             if (leafNode == null) {
                 leafNode = foundNode.parent;
@@ -870,7 +526,7 @@ public class HoeffdingTree extends AbstractClassifier
 
     @Override
     protected Measurement[] getModelMeasurementsImpl() {
-        Measurement m[] =  new Measurement[]{
+        return new Measurement[]{
                 new Measurement("tree size (nodes)", this.decisionNodeCount
                         + this.activeLeafNodeCount + this.inactiveLeafNodeCount),
                 new Measurement("tree size (leaves)", this.activeLeafNodeCount
@@ -883,34 +539,7 @@ public class HoeffdingTree extends AbstractClassifier
                 new Measurement("inactive leaf byte size estimate",
                         this.inactiveLeafByteSizeEstimate),
                 new Measurement("byte size estimate overhead",
-                        this.byteSizeEstimateOverheadFraction),
-                new Measurement("weightedAcc",
-                        this.weightedHits / this.totalInstancesSeen)};
-        this.weightedHits = this.totalInstancesSeen = 0.0;
-        return m;
-    }
-
-    public void outputTreeDotFile(HoeffdingTree ht, Instance instance) throws IOException {
-        FileOutputStream debugStream = null;
-        SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
-        String classSplitName = splitCriterion.getClass().getName().replace("moa.classifiers.core.splitcriteria.", "");
-
-        File dumpFile = new File(this.debugDotFilePrefixOption.getValue() + "_" + classSplitName + "_" +
-                (int) this.trainingWeightSeenByModel + "." + this.debugDotFilePrefixOption.getDefaultFileExtension());
-
-        try {
-            debugStream = new FileOutputStream(dumpFile, false);
-        } catch (Exception ex) {
-            throw new RuntimeException("Unable to open immediate result file: " + dumpFile, ex);
-        }
-
-        StringBuilder output = new StringBuilder();
-        this.treeRoot.getNodeDot(ht, output, instance);
-        String treeDot = output.toString();
-        debugStream.write("digraph Tree {\nnode [shape=box] ;\n".getBytes());
-        debugStream.write(("// Split criterion = " + classSplitName + "\n").getBytes());
-        debugStream.write(treeDot.getBytes());
-        debugStream.write("}".getBytes());
+                        this.byteSizeEstimateOverheadFraction)};
     }
 
     public int measureTreeDepth() {
@@ -937,17 +566,18 @@ public class HoeffdingTree extends AbstractClassifier
     }
 
     //Procedure added for Hoeffding Adaptive Trees (ADWIN)
-    // "impurity" added to store for each splitNode the impurity at the time of split
-    protected SplitNode newSplitNode(InstanceConditionalTest splitTest,
-                                     double[] classObservations, double impurity, int size) {
-        return new SplitNode(splitTest, classObservations, impurity, size);
+    protected SplitNode newSplitNode(InstanceConditionalTest splitTest, int indicesFeaturesSelected[],
+                                     double meritsFeaturesSelected[],
+                                     double[] classObservations, int size) {
+        return new SplitNode(splitTest, indicesFeaturesSelected, meritsFeaturesSelected, classObservations, size);
     }
 
-    // "impurity" added to store for each splitNode the impurity at the time of split
-    protected SplitNode newSplitNode(InstanceConditionalTest splitTest,
-                                     double[] classObservations, double impurity) {
-        return new SplitNode(splitTest, classObservations, impurity);
+    protected SplitNode newSplitNode(InstanceConditionalTest splitTest, int indicesFeaturesSelected[],
+                                     double meritsFeaturesSelected[],
+                                     double[] classObservations) {
+        return new SplitNode(splitTest, indicesFeaturesSelected, meritsFeaturesSelected, classObservations);
     }
+
 
     protected AttributeClassObserver newNominalClassObserver() {
         AttributeClassObserver nominalClassObserver = (AttributeClassObserver) getPreparedClassOption(this.nominalEstimatorOption);
@@ -961,17 +591,23 @@ public class HoeffdingTree extends AbstractClassifier
 
     protected void attemptToSplit(ActiveLearningNode node, SplitNode parent,
                                   int parentIndex) {
+
+        int indicesSelected[] = null;
+        double meritsSelected[] = null;
+        if(parent != null) {
+            indicesSelected = new int[parent.indicesFeaturesSelected.length + 1];
+            System.arraycopy(parent.indicesFeaturesSelected, 0, indicesSelected, 0, parent.indicesFeaturesSelected.length);
+            meritsSelected = new double[parent.meritsFeaturesSelected.length + 1];
+            System.arraycopy(parent.meritsFeaturesSelected, 0, meritsSelected, 0, parent.meritsFeaturesSelected.length);
+        }else{
+            indicesSelected = new int[1]; // room for a single value that will be selected later in the code
+            meritsSelected = new double[1];
+        }
+
         if (!node.observedClassDistributionIsPure()) {
             SplitCriterion splitCriterion = (SplitCriterion) getPreparedClassOption(this.splitCriterionOption);
-            AttributeSplitSuggestion[] bestSplitSuggestions = node.getBestSplitSuggestions(splitCriterion, this);
+            AttributeSplitSuggestion[] bestSplitSuggestions = node.getBestSplitSuggestions(splitCriterion, this, indicesSelected);
             Arrays.sort(bestSplitSuggestions);
-//            System.out.println("----------------");
-//            for(int i = 0; i < bestSplitSuggestions.length; i++){
-//                if(bestSplitSuggestions[i].splitTest != null) {
-//                    System.out.println(bestSplitSuggestions[i].splitTest.getAttsTestDependsOn()[0] + "\t" +
-//                            bestSplitSuggestions[i].merit);
-//                }
-//            }
             boolean shouldSplit = false;
             if (bestSplitSuggestions.length < 2) {
                 shouldSplit = bestSplitSuggestions.length > 0;
@@ -980,13 +616,10 @@ public class HoeffdingTree extends AbstractClassifier
                         this.splitConfidenceOption.getValue(), node.getWeightSeen());
                 AttributeSplitSuggestion bestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 1];
                 AttributeSplitSuggestion secondBestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 2];
-                if (useMinMeritForSplitOption.isSet() &&
-                        bestSuggestion.merit > minMeritForSplitOption.getValue() &&
-                        (bestSuggestion.merit - secondBestSuggestion.merit > hoeffdingBound)){
-                    shouldSplit = true;
-                }else if (!useMinMeritForSplitOption.isSet()
-                        && ((bestSuggestion.merit - secondBestSuggestion.merit > hoeffdingBound)
-                                || (hoeffdingBound < this.tieThresholdOption.getValue()))) {
+
+                double minValueForSplit = computeMinValueForSplit(bestSuggestion.splitTest.getAttsTestDependsOn()[0], indicesSelected, meritsSelected);
+                if (((bestSuggestion.merit - secondBestSuggestion.merit > hoeffdingBound)
+                        || (hoeffdingBound < this.tieThresholdOption.getValue())) && bestSuggestion.merit > minValueForSplit) {
                     shouldSplit = true;
                 }
                 // }
@@ -1022,22 +655,19 @@ public class HoeffdingTree extends AbstractClassifier
                     }
                 }
             }
+
             if (shouldSplit) {
                 AttributeSplitSuggestion splitDecision = bestSplitSuggestions[bestSplitSuggestions.length - 1];
                 if (splitDecision.splitTest == null) {
                     // preprune - null wins
                     deactivateLearningNode(node, parent, parentIndex);
                 } else {
-                    // System.out.println("@ " + this.trainingWeightSeenByModel + "\tCHOSEN = " + splitDecision.splitTest.getAttsTestDependsOn()[0] + "\t merit = " + splitDecision.merit);
-                    SplitNode newSplit = newSplitNode(splitDecision.splitTest,
-                            node.getObservedClassDistribution(), splitDecision.merit);
+                    indicesSelected[indicesSelected.length - 1] = splitDecision.splitTest.getAttsTestDependsOn()[0];
+                    meritsSelected[meritsSelected.length   - 1] = splitDecision.merit;
+                    SplitNode newSplit = newSplitNode(splitDecision.splitTest, indicesSelected, meritsSelected,
+                            node.getObservedClassDistribution(), splitDecision.numSplits());
                     for (int i = 0; i < splitDecision.numSplits(); i++) {
-                        Node newChild = null;
-                        if (doNotUseParentStatisticsOption.isSet()) {
-                            newChild = newLearningNode();
-                        } else {
-                            newChild = newLearningNode(splitDecision.resultingClassDistributionFromSplit(i));
-                        }
+                        Node newChild = newLearningNode(splitDecision.resultingClassDistributionFromSplit(i));
                         newSplit.setChild(i, newChild);
                     }
                     this.activeLeafNodeCount--;
@@ -1053,6 +683,27 @@ public class HoeffdingTree extends AbstractClassifier
                 enforceTrackerLimit();
             }
         }
+    }
+
+    private double computeMinValueForSplit(int selected, int[] indicesSelected, double[] meritsSelected) {
+        double val = 0.0;
+        if(regularizationOption.getChosenLabel().equalsIgnoreCase("AVG")){
+            int qtd = 0;
+            for(int i = 0; i < indicesSelected.length; i++){
+                if(selected == indicesSelected[i]){
+                    val += meritsSelected[i];
+                    qtd++;
+                }
+            }
+            if(qtd > 0) val /= qtd;
+        }else if(regularizationOption.getChosenLabel().equalsIgnoreCase("MAX")){
+            for(int i = 0; i < indicesSelected.length; i++) {
+                if (selected == indicesSelected[i] && meritsSelected[i] > val) {
+                    val = meritsSelected[i];
+                }
+            }
+        }
+        return val;
     }
 
     public void enforceTrackerLimit() {
@@ -1206,15 +857,12 @@ public class HoeffdingTree extends AbstractClassifier
 
         private static final long serialVersionUID = 1L;
 
-        public LearningNodeNB() {
-        }
-
-        public LearningNodeNB(double[] initialClassObservations) {
-            super(initialClassObservations);
+        public LearningNodeNB(double[] initialClassObservations, double lambda) {
+            super(initialClassObservations, lambda);
         }
 
         @Override
-        public double[] getClassVotes(Instance inst, HoeffdingTree ht) {
+        public double[] getClassVotes(Instance inst, HoeffdingTreeRegularizer ht) {
             if (getWeightSeen() >= ht.nbThresholdOption.getValue()) {
                 return NaiveBayes.doNaiveBayesPrediction(inst,
                         this.observedClassDistribution,
@@ -1237,15 +885,12 @@ public class HoeffdingTree extends AbstractClassifier
 
         protected double nbCorrectWeight = 0.0;
 
-        public LearningNodeNBAdaptive() {
-        }
-
-        public LearningNodeNBAdaptive(double[] initialClassObservations) {
-            super(initialClassObservations);
+        public LearningNodeNBAdaptive(double[] initialClassObservations, double lambda) {
+            super(initialClassObservations, lambda);
         }
 
         @Override
-        public void learnFromInstance(Instance inst, HoeffdingTree ht) {
+        public void learnFromInstance(Instance inst, HoeffdingTreeRegularizer ht) {
             int trueClass = (int) inst.classValue();
             if (this.observedClassDistribution.maxIndex() == trueClass) {
                 this.mcCorrectWeight += inst.weight();
@@ -1258,7 +903,7 @@ public class HoeffdingTree extends AbstractClassifier
         }
 
         @Override
-        public double[] getClassVotes(Instance inst, HoeffdingTree ht) {
+        public double[] getClassVotes(Instance inst, HoeffdingTreeRegularizer ht) {
             if (this.mcCorrectWeight > this.nbCorrectWeight) {
                 return this.observedClassDistribution.getArrayCopy();
             }
@@ -1274,15 +919,14 @@ public class HoeffdingTree extends AbstractClassifier
     protected LearningNode newLearningNode(double[] initialClassObservations) {
         LearningNode ret;
         int predictionOption = this.leafpredictionOption.getChosenIndex();
+        double lambda = lambdaOption.getValue();
         if (predictionOption == 0) { //MC
-            ret = new ActiveLearningNode(initialClassObservations);
+            ret = new ActiveLearningNode(initialClassObservations, lambda);
         } else if (predictionOption == 1) { //NB
-            ret = new LearningNodeNB(initialClassObservations);
+            ret = new LearningNodeNB(initialClassObservations, lambda);
         } else { //NBAdaptive
-            ret = new LearningNodeNBAdaptive(initialClassObservations);
+            ret = new LearningNodeNBAdaptive(initialClassObservations, lambda);
         }
         return ret;
     }
-
-
 }

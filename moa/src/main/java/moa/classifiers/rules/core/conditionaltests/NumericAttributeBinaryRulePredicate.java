@@ -177,4 +177,9 @@ public class NumericAttributeBinaryRulePredicate extends InstanceConditionalBina
 		 return state;
 	 }
 
+    @Override
+    public String describeBranchValue(int branch, InstancesHeader context) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
 }

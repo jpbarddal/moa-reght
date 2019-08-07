@@ -26,6 +26,7 @@ import moa.classifiers.Classifier;
 import moa.classifiers.core.AttributeSplitSuggestion;
 import moa.classifiers.core.splitcriteria.SplitCriterion;
 import moa.classifiers.trees.HoeffdingTree;
+import moa.core.Utils;
 import moa.options.ClassOption;
 import com.yahoo.labs.samoa.instances.Instance;
 
@@ -47,31 +48,39 @@ public class HoeffdingTreeClassifLeaves extends HoeffdingTree {
 
     public class LearningNodeClassifier extends ActiveLearningNode {
 
+        private static final int CLASSIFIER_TYPE =  1;
+        private static final int CLASSIFIER_ADAPTIVE_TYPE =  2;
+
         protected Classifier classifier;
 
         private static final long serialVersionUID = 1L;
+
+        private int type = CLASSIFIER_TYPE;
+        protected double mcCorrectWeight = 0.0;
+        protected double learnerCorrectWeight = 0.0;
 
         public LearningNodeClassifier(double[] initialClassObservations) {
             super(initialClassObservations);
         }
 
-        public LearningNodeClassifier(double[] initialClassObservations, Classifier cl, HoeffdingTreeClassifLeaves ht) {
+        public LearningNodeClassifier(double[] initialClassObservations, Classifier cl, HoeffdingTreeClassifLeaves ht, int type) {
             super(initialClassObservations);
             //public void LearningNodeClassifier1(double[] initialClassObservations, Classifier cl, HoeffdingTreeClassifLeaves ht ) {
-
+            this.type = type;
             if (cl == null) {
                 this.classifier = (Classifier) getPreparedClassOption(ht.learnerOption);
             } else {
                 this.classifier = cl.copy();
             }
+            this.classifier.resetLearning();
         }
 	
         @Override
         public double[] getClassVotes(Instance inst, HoeffdingTree ht) {
-            if (getWeightSeen() >= ((HoeffdingTreeClassifLeaves) ht).nbThresholdOption.getValue()) {
-                return this.classifier.getVotesForInstance(inst);
+            if (this.mcCorrectWeight > this.learnerCorrectWeight) {
+                return this.observedClassDistribution.getArrayCopy();
             }
-            return super.getClassVotes(inst, ht);
+            return classifier.getVotesForInstance(inst);
         }
 
         @Override
@@ -81,8 +90,18 @@ public class HoeffdingTreeClassifLeaves extends HoeffdingTree {
 
         @Override
         public void learnFromInstance(Instance inst, HoeffdingTree ht) {
-            this.classifier.trainOnInstance(inst);
-            super.learnFromInstance(inst, ht);
+            int trueClass = (int) inst.classValue();
+            if (this.observedClassDistribution.maxIndex() == trueClass) {
+                this.mcCorrectWeight += inst.weight();
+            }
+            if (Utils.maxIndex(classifier.getVotesForInstance(inst)) == trueClass) {
+                this.learnerCorrectWeight += inst.weight();
+            }
+            if(type == CLASSIFIER_TYPE) {
+                super.learnFromInstance(inst, ht);
+            }else{
+                classifier.trainOnInstance(inst);
+            }
         }
 
         public Classifier getClassifier() {
@@ -96,12 +115,21 @@ public class HoeffdingTreeClassifLeaves extends HoeffdingTree {
 
     @Override
     protected LearningNode newLearningNode(double[] initialClassObservations) {
-        return new LearningNodeClassifier(initialClassObservations, null, this);
+        return new LearningNodeClassifier(initialClassObservations, null, this, 1);
     }
 
     //@Override
     protected LearningNode newLearningNode(double[] initialClassObservations, Classifier cl) {
-        return new LearningNodeClassifier(initialClassObservations, cl, this);
+        LearningNode ret;
+        int predictionOption = this.leafpredictionOption.getChosenIndex();
+        if (predictionOption == 0) { //MC
+            ret = new ActiveLearningNode(initialClassObservations);
+        } else if (predictionOption == 1) { //Classifier alone
+            ret = new LearningNodeClassifier(initialClassObservations, cl, this, LearningNodeClassifier.CLASSIFIER_TYPE);
+        } else { // ClassifierAdaptive (such as in NBAdaptive)
+            ret = new LearningNodeClassifier(initialClassObservations, cl, this, LearningNodeClassifier.CLASSIFIER_ADAPTIVE_TYPE);
+        }
+        return ret;
     }
 
     @Override
@@ -166,7 +194,7 @@ public class HoeffdingTreeClassifLeaves extends HoeffdingTree {
                     deactivateLearningNode(node, parent, parentIndex);
                 } else {
                     SplitNode newSplit = newSplitNode(splitDecision.splitTest,
-                            node.getObservedClassDistribution());
+                            node.getObservedClassDistribution(), splitDecision.merit);
                     for (int i = 0; i < splitDecision.numSplits(); i++) {
                         //Unique Change of HoeffdingTree
                         Node newChild = newLearningNode(splitDecision.resultingClassDistributionFromSplit(i), ((LearningNodeClassifier) node).getClassifier());

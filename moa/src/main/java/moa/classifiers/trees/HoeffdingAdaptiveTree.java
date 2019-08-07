@@ -121,14 +121,14 @@ public class HoeffdingAdaptiveTree extends HoeffdingTree {
         }
         
         public AdaSplitNode(InstanceConditionalTest splitTest,
-                double[] classObservations, int size) {
-            super(splitTest, classObservations, size);
+                double[] classObservations, double impurity, int size) {
+            super(splitTest, classObservations, impurity, size);
             this.classifierRandom = new Random(this.randomSeed);
         }
         
         public AdaSplitNode(InstanceConditionalTest splitTest,
-                double[] classObservations) {
-            super(splitTest, classObservations);
+                double[] classObservations, double impurity) {
+            super(splitTest, classObservations, impurity);
             this.classifierRandom = new Random(this.randomSeed);
         }
 
@@ -177,8 +177,8 @@ public class HoeffdingAdaptiveTree extends HoeffdingTree {
             //Compute ClassPrediction using filterInstanceToLeaf
             //int ClassPrediction = Utils.maxIndex(filterInstanceToLeaf(inst, null, -1).node.getClassVotes(inst, ht));
             int ClassPrediction = 0;
-            if (filterInstanceToLeaf(inst, parent, parentBranch).node != null) {
-                ClassPrediction = Utils.maxIndex(filterInstanceToLeaf(inst, parent, parentBranch).node.getClassVotes(inst, ht));
+            if (filterInstanceToLeaf(inst, parent, parentBranch, null).node != null) {
+                ClassPrediction = Utils.maxIndex(filterInstanceToLeaf(inst, parent, parentBranch, null).node.getClassVotes(inst, ht));
             }
 
             boolean blCorrect = (trueClass == ClassPrediction);
@@ -447,14 +447,14 @@ public class HoeffdingAdaptiveTree extends HoeffdingTree {
 
    @Override
     protected SplitNode newSplitNode(InstanceConditionalTest splitTest,
-            double[] classObservations, int size) {
-        return new AdaSplitNode(splitTest, classObservations, size);
+            double[] classObservations, double impurity, int size) {
+        return new AdaSplitNode(splitTest, classObservations, impurity, size);
     }
    
     @Override
     protected SplitNode newSplitNode(InstanceConditionalTest splitTest,
-            double[] classObservations) {
-        return new AdaSplitNode(splitTest, classObservations);
+            double[] classObservations, double impurity) {
+        return new AdaSplitNode(splitTest, classObservations, impurity);
     }
 
     @Override
@@ -464,6 +464,13 @@ public class HoeffdingAdaptiveTree extends HoeffdingTree {
             this.activeLeafNodeCount = 1;
         }
         ((NewNode) this.treeRoot).learnFromInstance(inst, this, null, -1);
+        try{
+            if (outputTreeOption.isSet())
+                if (this.trainingWeightSeenByModel % this.debugOutputTrainingWeightSeenOption.getValue() == 0)
+                    outputTreeDotFile(this, inst);
+        }catch (Exception e){
+
+        }
     }
 
     //New for options vote

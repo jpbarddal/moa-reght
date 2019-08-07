@@ -52,6 +52,12 @@ public class NominalAttributeMultiwayTest extends InstanceConditionalTest {
                 + InstancesHeader.getNominalValueString(context, this.attIndex,
                 branch);
     }
+    
+    @Override
+    public String describeBranchValue(int branch, InstancesHeader context) {
+        return  " = " + InstancesHeader.getNominalValueString(context, this.attIndex,
+                branch);
+    }
 
     @Override
     public int maxBranches() {

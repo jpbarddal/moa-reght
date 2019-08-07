@@ -66,6 +66,8 @@ public abstract class InstanceConditionalTest extends AbstractMOAObject {
     public abstract String describeConditionForBranch(int branch,
             InstancesHeader context);
 
+    public abstract String describeBranchValue(int branch, InstancesHeader context);
+    
     /**
      * Returns an array with the attributes that the test depends on.
      *

@@ -74,6 +74,18 @@ public class NumericAttributeBinaryTest extends InstanceConditionalBinaryTest {
         }
         throw new IndexOutOfBoundsException();
     }
+    
+    @Override
+    public String describeBranchValue(int branch, InstancesHeader context) {
+        if ((branch == 0) || (branch == 1)) {
+            char compareChar = branch == 0 ? '<' : '>';
+            int equalsBranch = this.equalsPassesTest ? 0 : 1;
+            return compareChar + (branch == equalsBranch ? "= " : " ")
+                    + InstancesHeader.getNumericValueString(context,
+                    this.attIndex, this.attValue);
+        }
+        throw new IndexOutOfBoundsException();
+    }
 
     @Override
     public void getDescription(StringBuilder sb, int indent) {

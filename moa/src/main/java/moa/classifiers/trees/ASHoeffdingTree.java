@@ -106,7 +106,7 @@ public class ASHoeffdingTree extends HoeffdingTree {
             this.treeRoot = newLearningNode();
             this.activeLeafNodeCount = 1;
         }
-        FoundNode foundNode = this.treeRoot.filterInstanceToLeaf(inst, null, -1);
+        FoundNode foundNode = this.treeRoot.filterInstanceToLeaf(inst, null, -1, null);
         Node leafNode = foundNode.node;
         if (leafNode == null) {
             leafNode = newLearningNode();

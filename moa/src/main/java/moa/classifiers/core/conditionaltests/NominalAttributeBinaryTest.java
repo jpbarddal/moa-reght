@@ -59,6 +59,16 @@ public class NominalAttributeBinaryTest extends InstanceConditionalBinaryTest {
         }
         throw new IndexOutOfBoundsException();
     }
+    
+    @Override
+    public String describeBranchValue(int branch, InstancesHeader context) {
+        if ((branch == 0) || (branch == 1)) {
+            return (branch == 0 ? " = " : " != ")
+                    + InstancesHeader.getNominalValueString(context,
+                    this.attIndex, this.attValue);
+        }
+        throw new IndexOutOfBoundsException();
+    }
 
     @Override
     public void getDescription(StringBuilder sb, int indent) {

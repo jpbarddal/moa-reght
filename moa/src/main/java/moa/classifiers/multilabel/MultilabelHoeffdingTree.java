@@ -189,7 +189,7 @@ public class MultilabelHoeffdingTree extends HoeffdingTreeClassifLeaves implemen
 	public Prediction getPredictionForInstance(MultiLabelInstance inst){
 
 		if (this.treeRoot != null) {
-			FoundNode foundNode = this.treeRoot.filterInstanceToLeaf(inst, null, -1);
+			FoundNode foundNode = this.treeRoot.filterInstanceToLeaf(inst, null, -1, null);
 			Node leafNode = (MultilabelLearningNodeClassifier) foundNode.node;
 			MultilabelLearningNodeClassifier multilabelLeafNode = (MultilabelLearningNodeClassifier) leafNode;
 			if (leafNode == null) {
