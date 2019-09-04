@@ -21,9 +21,14 @@ package moa.classifiers.trees;
 
 import com.github.javacliparser.IntOption;
 import moa.classifiers.bayes.NaiveBayes;
+import moa.classifiers.core.AttributeSplitSuggestion;
 import moa.classifiers.core.attributeclassobservers.AttributeClassObserver;
+import moa.classifiers.core.splitcriteria.SplitCriterion;
 import moa.core.Utils;
 import com.yahoo.labs.samoa.instances.Instance;
+
+import java.util.LinkedList;
+import java.util.List;
 
 /**
  * Adaptive Random Forest Hoeffding Tree.
@@ -63,10 +68,13 @@ public class ARFHoeffdingTree extends HoeffdingTree {
         protected int[] listAttributes;
 
         protected int numAttributes;
-        
-        public RandomLearningNode(double[] initialClassObservations, int subspaceSize) {
+
+        protected double lambda;
+
+        public RandomLearningNode(double[] initialClassObservations, int subspaceSize, double lambda) {
             super(initialClassObservations);
             this.numAttributes = subspaceSize;
+            this.lambda = lambda;
         }
 
         @Override
@@ -101,14 +109,58 @@ public class ARFHoeffdingTree extends HoeffdingTree {
                 obs.observeAttributeClass(inst.value(instAttIndex), (int) inst.classValue(), inst.weight());
             }
         }
+
+
+        public AttributeSplitSuggestion[] getBestSplitSuggestions(SplitCriterion criterion,
+                                                                  HoeffdingTreeReg ht,
+                                                                  int selectedFeatures[]) {
+            List<AttributeSplitSuggestion> bestSuggestions = new LinkedList<AttributeSplitSuggestion>();
+            double[] preSplitDist = this.observedClassDistribution.getArrayCopy();
+            if (!ht.noPrePruneOption.isSet()) {
+                // add null split as an option
+                bestSuggestions.add(new AttributeSplitSuggestion(null,
+                        new double[0][], criterion.getMeritOfSplit(
+                        preSplitDist,
+                        new double[][]{preSplitDist})));
+            }
+            for (int i = 0; i < this.attributeObservers.size(); i++) {
+                AttributeClassObserver obs = this.attributeObservers.get(i);
+                if (obs != null) {
+                    AttributeSplitSuggestion bestSuggestion = obs.getBestEvaluatedSplitSuggestion(criterion,
+                            preSplitDist, i, ht.binarySplitsOption.isSet());
+                    if(bestSuggestion != null &&
+                            bestSuggestion.splitTest != null && bestSuggestion.splitTest.getAttsTestDependsOn() != null) {
+                        int selected = bestSuggestion.splitTest.getAttsTestDependsOn()[0];
+                        if (!contains(selectedFeatures, selected)) {
+                            bestSuggestion.merit *= lambda;
+                        }/*else{
+                        double gamma = 1.0 - (count(selected, selectedFeatures) / selectedFeatures.length);
+                        bestSuggestion.merit *= gamma;
+                    }*/
+                    }
+                    if (bestSuggestion != null) {
+                        bestSuggestions.add(bestSuggestion);
+                    }
+                }
+            }
+            return bestSuggestions.toArray(new AttributeSplitSuggestion[bestSuggestions.size()]);
+        }
+
+        private boolean contains(int a[], int v){
+            for(int i = 0; i < a.length; i++){
+                if(a[i] == v) return true;
+            }
+            return false;
+        }
+
     }
 
     public static class LearningNodeNB extends RandomLearningNode {
 
         private static final long serialVersionUID = 1L;
 
-        public LearningNodeNB(double[] initialClassObservations, int subspaceSize) {
-            super(initialClassObservations, subspaceSize);
+        public LearningNodeNB(double[] initialClassObservations, int subspaceSize, double lambda) {
+            super(initialClassObservations, subspaceSize, lambda);
         }
 
         @Override
@@ -135,8 +187,8 @@ public class ARFHoeffdingTree extends HoeffdingTree {
 
         protected double nbCorrectWeight = 0.0;
 
-        public LearningNodeNBAdaptive(double[] initialClassObservations, int subspaceSize) {
-            super(initialClassObservations, subspaceSize);
+        public LearningNodeNBAdaptive(double[] initialClassObservations, int subspaceSize, double lambda) {
+            super(initialClassObservations, subspaceSize, lambda);
         }
 
         @Override
@@ -171,11 +223,11 @@ public class ARFHoeffdingTree extends HoeffdingTree {
         LearningNode ret;
         int predictionOption = this.leafpredictionOption.getChosenIndex();
         if (predictionOption == 0) { //MC
-            ret = new RandomLearningNode(initialClassObservations, this.subspaceSizeOption.getValue());
+            ret = new RandomLearningNode(initialClassObservations, this.subspaceSizeOption.getValue(), 1.0);
         } else if (predictionOption == 1) { //NB
-            ret = new LearningNodeNB(initialClassObservations, this.subspaceSizeOption.getValue());
+            ret = new LearningNodeNB(initialClassObservations, this.subspaceSizeOption.getValue(), 1.0);
         } else { //NBAdaptive
-            ret = new LearningNodeNBAdaptive(initialClassObservations, this.subspaceSizeOption.getValue());
+            ret = new LearningNodeNBAdaptive(initialClassObservations, this.subspaceSizeOption.getValue(), 1.0);
         }
         return ret;
     }

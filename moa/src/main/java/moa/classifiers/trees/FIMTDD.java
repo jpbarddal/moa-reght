@@ -118,6 +118,11 @@ public class FIMTDD extends AbstractClassifier implements Regressor {
 	public FlagOption learningRatioConstOption = new FlagOption(
 			"learningRatioConst", 'p', "Keep learning rate constant instead of decaying.");
 
+	public FlagOption useMinMeritForSplitOption = new FlagOption("useMinMeritForSplit", 'w', "");
+
+	public FloatOption minMeritForSplitOption = new FloatOption("minMeritForSplit", 'M',
+			"Threshold for minimum merit.", 1e-10, 0.0, 1.0);
+
 	//endregion ================ OPTIONS ================
 
 	//region ================ CLASSES ================
@@ -899,7 +904,12 @@ public class FIMTDD extends AbstractClassifier implements Regressor {
 			// Alternatively, if two or more splits are very similar or identical in terms of their splits, then a threshold limit
 			// (default 0.05) is applied to the Hoeffding bound; if the Hoeffding bound is smaller than this limit then the two
 			// competing attributes are equally good, and the split will be made on the one with the higher SDR value.
-			if ((secondBestSuggestion.merit / bestSuggestion.merit < 1 - hoeffdingBound) || (hoeffdingBound < this.tieThresholdOption.getValue())) {
+			if (useMinMeritForSplitOption.isSet() &&
+					(secondBestSuggestion.merit / bestSuggestion.merit < 1 - hoeffdingBound)){
+				shouldSplit = true;
+			}else if (!useMinMeritForSplitOption.isSet()
+					&& (secondBestSuggestion.merit / bestSuggestion.merit < 1 - hoeffdingBound)
+					|| (hoeffdingBound < this.tieThresholdOption.getValue())) {
 				shouldSplit = true;
 			}
 			// If the splitting criterion was not met, initiate pruning of the E-BST structures in each attribute observer
@@ -907,7 +917,10 @@ public class FIMTDD extends AbstractClassifier implements Regressor {
 				for (int i = 0; i < node.attributeObservers.size(); i++) {
 					FIMTDDNumericAttributeClassObserver obs = node.attributeObservers.get(i);
 					if (obs != null) {
-						obs.removeBadSplits(splitCriterion, secondBestSuggestion.merit / bestSuggestion.merit, bestSuggestion.merit, hoeffdingBound);    
+						obs.removeBadSplits(splitCriterion,
+								secondBestSuggestion.merit / bestSuggestion.merit,
+								bestSuggestion.merit,
+								hoeffdingBound);
 					}
 				}
 			}

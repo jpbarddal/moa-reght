@@ -19,12 +19,16 @@ import java.util.*;
 public class HoeffdingTreeReg extends HoeffdingTree {
 
 
+    public MultiChoiceOption confidenceMethodOption = new MultiChoiceOption("confidenceMethod", 'C',
+            "Determines the confidence method for computing the bound.",
+            new String[]{"HOEFFDING", "MCDIARMID"}, new String[]{"HOEFFDING", "MCDIARMID"}, 0);
+
     public FloatOption lambdaOption = new FloatOption("lambda", 'L',
             "Lambda parameter for regularization.", 0.5, 0.0, 1.0);
 
     public MultiChoiceOption regularizationOption = new MultiChoiceOption("regularization", '*',
             "Strategy for checking minimum merit for splits.", new String[]{"AVG", "MAX"},
-            new String[]{"AVG", "MAX"}, 0);
+            new String[]{"AVG", "MAX"}, 1);
 
     public static class FoundNodeReg {
 
@@ -148,9 +152,10 @@ public class HoeffdingTreeReg extends HoeffdingTree {
             this.children = new AutoExpandVector<>(size);
         }
 
-        public SplitNodeReg(InstanceConditionalTest splitTest, int indicesFeaturesSelected[],
-                         double meritsFeaturesSelected[],
-                         double[] classObservations) {
+        public SplitNodeReg(InstanceConditionalTest splitTest,
+                            int indicesFeaturesSelected[],
+                            double meritsFeaturesSelected[],
+                            double[] classObservations) {
             super(classObservations);
             this.splitTest = splitTest;
             this.indicesFeaturesSelected = indicesFeaturesSelected;
@@ -365,6 +370,8 @@ public class HoeffdingTreeReg extends HoeffdingTree {
 
 //    public Node treeRoot;
 
+    protected int numClasses;
+
     protected int decisionNodeCount;
 
     protected int activeLeafNodeCount;
@@ -452,7 +459,7 @@ public class HoeffdingTreeReg extends HoeffdingTree {
             }
             return leafNode.getClassVotes(inst, this);
         } else {
-            int numClasses = inst.dataset().numClasses();
+            numClasses = inst.dataset().numClasses();
             return new double[numClasses];
         }
     }
@@ -496,6 +503,22 @@ public class HoeffdingTreeReg extends HoeffdingTree {
                                                double n) {
         return Math.sqrt(((range * range) * Math.log(1.0 / confidence))
                 / (2.0 * n));
+    }
+
+    public static double computeMcDiarmidInfoGain(int numClasses, double confidence, double n){
+        double cGain = 6 * (numClasses * log2(n * Math.E) + log2(2 * n)) + 2 * log2(numClasses);
+        double remainder = Math.sqrt(Math.log(1.0 / confidence) / 2 * n);
+        double epsilon = cGain * remainder;
+        return epsilon;
+    }
+
+    public static double computeMcDiarmidGini(double confidence, double n){
+        double epsilon = 8 * Math.sqrt(Math.log(1 / confidence) / (1 * n));
+        return epsilon;
+    }
+
+    public static double log2(double val){
+        return Math.log10(val) / Math.log10(2.0);
     }
 
     //Procedure added for Hoeffding Adaptive Trees (ADWIN)
@@ -545,14 +568,23 @@ public class HoeffdingTreeReg extends HoeffdingTree {
             if (bestSplitSuggestions.length < 2) {
                 shouldSplit = bestSplitSuggestions.length > 0;
             } else {
-                double hoeffdingBound = computeHoeffdingBound(splitCriterion.getRangeOfMerit(node.getObservedClassDistribution()),
-                        this.splitConfidenceOption.getValue(), node.getWeightSeen());
+                double bound = 0.0;
+                if(confidenceMethodOption.getChosenLabel().equals("HOEFFDING")) {
+                    bound = computeHoeffdingBound(splitCriterion.getRangeOfMerit(node.getObservedClassDistribution()),
+                            this.splitConfidenceOption.getValue(), node.getWeightSeen());
+                }else if(confidenceMethodOption.getChosenLabel().equals("MCDIARMID")){
+                    if(this.splitCriterionOption.toString().contains("InfoGain")){
+                        bound = computeMcDiarmidInfoGain(numClasses, this.splitConfidenceOption.getValue(), node.getWeightSeen());
+                    }else{
+                        bound = computeMcDiarmidGini(this.splitConfidenceOption.getValue(), node.getWeightSeen());
+                    }
+                }
                 AttributeSplitSuggestion bestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 1];
                 AttributeSplitSuggestion secondBestSuggestion = bestSplitSuggestions[bestSplitSuggestions.length - 2];
 
                 double minValueForSplit = computeMinValueForSplit(bestSuggestion.splitTest.getAttsTestDependsOn()[0], indicesSelected, meritsSelected);
-                if (((bestSuggestion.merit - secondBestSuggestion.merit > hoeffdingBound)
-                        || (hoeffdingBound < this.tieThresholdOption.getValue())) && bestSuggestion.merit > minValueForSplit) {
+                if (((bestSuggestion.merit - secondBestSuggestion.merit > bound)
+                        || (bound < this.tieThresholdOption.getValue())) && bestSuggestion.merit > minValueForSplit) {
                     shouldSplit = true;
                 }
                 // }
@@ -565,7 +597,7 @@ public class HoeffdingTreeReg extends HoeffdingTree {
                             int[] splitAtts = bestSplitSuggestions[i].splitTest.getAttsTestDependsOn();
                             if (splitAtts.length == 1) {
                                 if (bestSuggestion.merit
-                                        - bestSplitSuggestions[i].merit > hoeffdingBound) {
+                                        - bestSplitSuggestions[i].merit > bound) {
                                     poorAtts.add(new Integer(splitAtts[0]));
                                 }
                             }
@@ -577,7 +609,7 @@ public class HoeffdingTreeReg extends HoeffdingTree {
                             int[] splitAtts = bestSplitSuggestions[i].splitTest.getAttsTestDependsOn();
                             if (splitAtts.length == 1) {
                                 if (bestSuggestion.merit
-                                        - bestSplitSuggestions[i].merit < hoeffdingBound) {
+                                        - bestSplitSuggestions[i].merit < bound) {
                                     poorAtts.remove(new Integer(splitAtts[0]));
                                 }
                             }

@@ -479,6 +479,7 @@ public class HoeffdingTree extends AbstractClassifier
         }
 
         public void setChild(int index, Node child) {
+            InstanceConditionalTest splitTest = this.splitTest;
             if ((this.splitTest.maxBranches() >= 0)
                     && (index >= this.splitTest.maxBranches())) {
                 throw new IndexOutOfBoundsException();
@@ -1144,7 +1145,8 @@ public class HoeffdingTree extends AbstractClassifier
     }
 
     protected void deactivateLearningNode(ActiveLearningNode toDeactivate,
-                                          SplitNode parent, int parentBranch) {
+                                          SplitNode parent,
+                                          int parentBranch) {
         Node newLeaf = new InactiveLearningNode(toDeactivate.getObservedClassDistribution());
         if (parent == null) {
             this.treeRoot = newLeaf;
